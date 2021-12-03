@@ -77,7 +77,7 @@ if __name__ == '__main__':
                    item_tfms=Resize(img_shape, method=ResizeMethod.Pad, pad_mode = PadMode.Zeros),
                    batch_tfms=[Normalize.from_stats(*imagenet_stats)])
     
-    dls = dblock.dataloaders(path, bs=1)
+    dls = dblock.dataloaders(path, bs=2)
 
         # try progressive resizing
     def get_dls(bs, size):
@@ -101,10 +101,16 @@ if __name__ == '__main__':
     learn = Learner(dls, unet, loss_func=loss_func, metrics=[foreground_acc, Dice()])
     lrs = learn.lr_find(suggest_funcs=(minimum, steep, valley, slide))
     
+    #learn.fit_one_cycle(100, lr_max=slice(lrs.minimum, lrs.valley), 
+    #                    cbs=[ReduceLROnPlateau(monitor='valid_loss', min_delta=0.1, patience=5, min_lr=lrs.minimum),
+    #                                         EarlyStoppingCallback(monitor='dice', min_delta=0.01, patience=15),
+    #                                         SaveModelCallback(monitor='dice', min_delta=0.01)])
+    
     learn.fit_one_cycle(100, lr_max=slice(lrs.minimum, lrs.valley), 
                         cbs=[ReduceLROnPlateau(monitor='valid_loss', min_delta=0.1, patience=5, min_lr=lrs.minimum),
-                                             EarlyStoppingCallback(monitor='dice', min_delta=0.01, patience=15),
-                                             SaveModelCallback(monitor='dice', min_delta=0.01)])
+                                             EarlyStoppingCallback(monitor='foreground_acc', min_delta=0.01, patience=15),
+                                             SaveModelCallback(monitor='foreground_acc', min_delta=0.01)])
     
-    learn.export(f'dense_unet_mip_images_model_{projection}.pkl')
+    #learn.export(f'dense_unet_mip_images_model_{projection}')
+    learn.save(f'dense_unet_mip_images_model_{projection}')
     

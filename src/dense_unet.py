@@ -1,3 +1,4 @@
+# adapted from https://github.com/Flyfoxs/dynamic_unet
 import os
 # os.environ["CUDA_VISIBLE_DEVICES"]="0"
 from file_cache import *
@@ -75,17 +76,20 @@ def get_unet_config(model, img_size=(512, 512)):
     return layer_size, layers
 
 
+
 class DynamicUnet(SequentialEx):
     "Create a U-Net from a given architecture."
-
+    
+    
     def __init__(self, encoder: nn.Module, n_classes: int, img_size: Tuple[int, int] = (256, 256),
                  blur: bool = False,
                  blur_final=True, self_attention: bool = False,
                  y_range: Optional[Tuple[float, float]] = None,
                  last_cross: bool = True, bottle: bool = False, **kwargs):
 
-
+        
         imsize = tuple(img_size)
+        #def shape_change(x): return F.interpolate(x, imsize, mode='nearest')
         sfs_szs, select_layer = get_unet_config(encoder, img_size)
         ni = sfs_szs[-1][1]
         sfs_szs = list(reversed(sfs_szs[:-1]))
@@ -93,12 +97,9 @@ class DynamicUnet(SequentialEx):
         self.sfs = hook_outputs(select_layer, detach=False)
         x = dummy_eval(encoder, imsize).detach()
 
-        #middle_conv = nn.Sequential(conv_layer(ni, ni * 2, **kwargs),
-        #                            conv_layer(ni * 2, ni, **kwargs)).eval()
         middle_conv = nn.Sequential(ConvLayer(ni, ni * 2, **kwargs),
                                     ConvLayer(ni * 2, ni, **kwargs)).eval()
         x = middle_conv(x)
-        #layers = [encoder, batchnorm_2d(ni), nn.ReLU(), middle_conv]
         layers = [encoder, nn.BatchNorm2d(ni), nn.ReLU(), middle_conv]
 
         for i, x_size in enumerate(sfs_szs):
@@ -115,6 +116,12 @@ class DynamicUnet(SequentialEx):
         if imsize != sfs_szs[0][-2:]: layers.append(PixelShuffle_ICNR(ni, **kwargs))
         x = PixelShuffle_ICNR(ni)(x)
         if imsize != x.shape[-2:]: layers.append(Lambda(lambda x: F.interpolate(x, imsize, mode='nearest')))
+        #print(f'x is {x.shape[-2:]}, imsize is {imsize}')
+        #print(f'type x is {type(x)}')
+        #if imsize != x.shape[-2:]: 
+        #    #layers.append(Lambda(shape_change))   
+        #    layers.append(shape_change(x))
+            
         if last_cross:
             layers.append(MergeLayer(dense=True))
             ni += in_channels(encoder)
@@ -122,6 +129,7 @@ class DynamicUnet(SequentialEx):
         #layers += [conv_layer(ni, n_classes, ks=1, use_activ=False, **kwargs)]
         layers += [ConvLayer(ni, n_classes, ks=1, act_cls=None, **kwargs)]
         if y_range is not None: layers.append(SigmoidRange(*y_range))
+        #layers.append(ToTensorBase())
         super().__init__(*layers)
 
 
